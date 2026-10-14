@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     jwt_secret: str
     jwt_expire_minutes: int
     monitoring_interval_minutes: int
+    cors_origins: str = "http://localhost:5173,http://localhost"
 
     model_config = SettingsConfigDict(
         env_file=ROOT_ENV_FILE,
