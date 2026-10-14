@@ -36,6 +36,7 @@ from app.schemas.resource_allocation import (
     ResourceLoadRead,
 )
 from app.services.resource_allocation_service import ResourceAllocationService
+from app.services.reschedule_service import apply_proposal
 from app.services.critical_path_service import CPMResult, get_project_schedule
 
 
@@ -79,6 +80,23 @@ def create_project(data: ProjectCreate, db: Session = Depends(get_db), user: Uti
 @router.get("/projects/{project_id}", response_model=ProjectRead)
 def read_project(project_id: UUID, db: Session = Depends(get_db), user: Utilisateur = Depends(get_current_user)) -> Projet:
     return service.get_project(db, project_id, user)
+
+
+@router.post("/agent-actions/{action_id}/approve", status_code=204)
+def approve_agent_action(
+    action_id: UUID,
+    db: Session = Depends(get_db),
+    user: Utilisateur = Depends(require_roles(UserRole.CHEF_PROJET)),
+) -> Response:
+    """Valide une proposition agent du chef de projet concerné."""
+
+    try:
+        apply_proposal(db, action_id, user.id)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/projects/{project_id}/critical-path", response_model=CPMResult)
