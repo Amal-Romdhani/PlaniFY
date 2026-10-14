@@ -2,7 +2,7 @@ from uuid import UUID
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,7 @@ from app.core.security import hash_password
 from app.models.affectation import Affectation
 from app.models.alerte import Alerte
 from app.models.dependance import Dependance
-from app.models.enums import UserRole
+from app.models.enums import ResourceType, UserRole
 from app.models.indisponibilite import Indisponibilite
 from app.models.jalon import Jalon
 from app.models.projet import Projet
@@ -41,6 +41,7 @@ from app.services.resource_allocation_service import ResourceAllocationService
 from app.services.reschedule_service import apply_proposal
 from app.services.critical_path_service import CPMResult, get_project_schedule
 from app.services.dashboard_service import get_project_dashboard
+from app.agent.trigger import handle_unavailability_created
 
 
 router = APIRouter()
@@ -422,21 +423,56 @@ def delete_assignment(assignment_id: UUID, db: Session = Depends(get_db), user: 
 
 
 @router.get("/unavailabilities", response_model=list[UnavailabilityRead])
-def list_unavailabilities(db: Session = Depends(get_db), user: Utilisateur = Depends(get_current_user)) -> list[Indisponibilite]:
+def list_unavailabilities(
+    resource_id: UUID | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: Utilisateur = Depends(get_current_user),
+) -> list[Indisponibilite]:
     if user.role == UserRole.ADMIN:
-        return list(db.scalars(select(Indisponibilite)).all())
+        query = select(Indisponibilite)
+        if resource_id is not None:
+            query = query.where(Indisponibilite.ressource_id == resource_id)
+        return list(db.scalars(query).all())
     if user.role == UserRole.MEMBRE and user.ressource is not None:
+        if resource_id is not None and resource_id != user.ressource.id:
+            raise HTTPException(status_code=403, detail="Permissions insuffisantes")
         return list(db.scalars(select(Indisponibilite).where(Indisponibilite.ressource_id == user.ressource.id)).all())
-    return [item for item in db.scalars(select(Indisponibilite)).all() if service.visible_unavailability(db, item, user)]
+    items = db.scalars(select(Indisponibilite)).all()
+    return [
+        item for item in items
+        if (resource_id is None or item.ressource_id == resource_id)
+        and service.visible_unavailability(db, item, user)
+    ]
 
 
 @router.post("/unavailabilities", response_model=UnavailabilityRead, status_code=201)
-def create_unavailability(data: UnavailabilityCreate, db: Session = Depends(get_db), user: Utilisateur = Depends(get_current_user)) -> Indisponibilite:
-    resource = service.resource_for_user(db, user, data.ressource_id)
-    if user.role not in (UserRole.ADMIN, UserRole.MEMBRE):
+def create_unavailability(
+    data: UnavailabilityCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: Utilisateur = Depends(get_current_user),
+) -> Indisponibilite:
+    resource = db.get(Ressource, data.ressource_id)
+    if resource is None:
+        raise service.not_found("Ressource")
+    if resource.type != ResourceType.HUMAINE:
+        raise HTTPException(status_code=422, detail="Une indisponibilité concerne une ressource humaine")
+    if user.role == UserRole.MEMBRE and resource.utilisateur_id != user.id:
         raise HTTPException(status_code=403, detail="Permissions insuffisantes")
+    if user.role not in (UserRole.ADMIN, UserRole.MEMBRE, UserRole.CHEF_PROJET):
+        raise HTTPException(status_code=403, detail="Permissions insuffisantes")
+    overlap = db.scalar(
+        select(Indisponibilite.id).where(
+            Indisponibilite.ressource_id == data.ressource_id,
+            Indisponibilite.date_debut <= data.date_fin,
+            Indisponibilite.date_fin >= data.date_debut,
+        )
+    )
+    if overlap is not None:
+        raise HTTPException(status_code=409, detail="Cette période chevauche une indisponibilité existante")
     result = CrudRepository(db, Indisponibilite).create(**data.model_dump())
     save(db)
+    background_tasks.add_task(handle_unavailability_created, result.id)
     return result
 
 
@@ -464,6 +500,9 @@ def delete_unavailability(item_id: UUID, db: Session = Depends(get_db), user: Ut
         raise service.not_found("Indisponibilité")
     if user.role == UserRole.MEMBRE:
         service.resource_for_user(db, user, item.ressource_id)
+    elif user.role == UserRole.CHEF_PROJET:
+        if not service.visible_unavailability(db, item, user):
+            raise HTTPException(status_code=403, detail="Permissions insuffisantes")
     elif user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Permissions insuffisantes")
     return remove(db, item)

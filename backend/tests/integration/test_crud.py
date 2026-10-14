@@ -93,3 +93,61 @@ def test_validation_and_missing_entities(client: TestClient) -> None:
     assert invalid.status_code == 422
     missing = client.get("/projects/00000000-0000-0000-0000-000000000000", headers=admin_headers)
     assert missing.status_code == 404
+
+
+def test_unavailability_permissions_and_overlap(client: TestClient, monkeypatch) -> None:
+    admin_headers = token(client, "admin@test.local", "admin-password")
+    users = client.get("/users", headers=admin_headers).json()
+    member_id = next(user["id"] for user in users if user["email"] == "member@test.local")
+    first_resource = client.post(
+        "/resources",
+        json={"nom": "Membre ressource", "type": "HUMAINE", "charge_max": 8, "utilisateur_id": member_id},
+        headers=admin_headers,
+    )
+    assert first_resource.status_code == 201
+    second_resource = client.post(
+        "/resources",
+        json={"nom": "Autre ressource", "type": "HUMAINE", "charge_max": 8},
+        headers=admin_headers,
+    )
+    assert second_resource.status_code == 201
+    member_headers = token(client, "member@test.local", "member-password")
+    monkeypatch.setattr("app.api.crud.handle_unavailability_created", lambda _: None)
+
+    own = client.post(
+        "/unavailabilities",
+        json={
+            "ressource_id": first_resource.json()["id"],
+            "date_debut": "2026-03-02",
+            "date_fin": "2026-03-04",
+            "motif": "CONGE",
+        },
+        headers=member_headers,
+    )
+    assert own.status_code == 201
+    overlap = client.post(
+        "/unavailabilities",
+        json={
+            "ressource_id": first_resource.json()["id"],
+            "date_debut": "2026-03-04",
+            "date_fin": "2026-03-05",
+            "motif": "AUTRE",
+        },
+        headers=member_headers,
+    )
+    assert overlap.status_code == 409
+    forbidden = client.post(
+        "/unavailabilities",
+        json={
+            "ressource_id": second_resource.json()["id"],
+            "date_debut": "2026-03-10",
+            "date_fin": "2026-03-11",
+            "motif": "CONGE",
+        },
+        headers=member_headers,
+    )
+    assert forbidden.status_code == 403
+    listed = client.get("/unavailabilities", headers=member_headers)
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+    assert client.delete(f"/unavailabilities/{own.json()['id']}", headers=member_headers).status_code == 204
