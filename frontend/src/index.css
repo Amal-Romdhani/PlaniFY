@@ -23,3 +23,21 @@ input,
 select {
   font: inherit;
 }
+
+.gantt-critical .bar {
+  fill: #ef4444;
+}
+
+.gantt-normal .bar {
+  fill: #2563eb;
+}
+
+.gantt-conflict .bar {
+  stroke: #f97316;
+  stroke-width: 3px;
+}
+
+.gantt-milestone .bar {
+  fill: #a855f7;
+  stroke: #7e22ce;
+}
