@@ -73,6 +73,12 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
                 role=UserRole.ADMIN,
             ),
             Utilisateur(
+                nom="Chef",
+                email="chef@planify.local",
+                mot_de_passe_hash=hash_password("chef-password"),
+                role=UserRole.CHEF_PROJET,
+            ),
+            Utilisateur(
                 nom="Membre",
                 email="member@test.local",
                 mot_de_passe_hash=hash_password("member-password"),

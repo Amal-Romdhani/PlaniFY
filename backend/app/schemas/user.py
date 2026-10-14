@@ -9,7 +9,7 @@ class UserCreate(BaseModel):
     """Données de création d'un utilisateur."""
 
     nom: str = Field(min_length=1, max_length=255)
-    email: EmailStr
+    email: str
     mot_de_passe: str = Field(min_length=8, max_length=128)
     role: UserRole
 
@@ -21,7 +21,7 @@ class UserRead(BaseModel):
 
     id: UUID
     nom: str
-    email: EmailStr
+    email: str
     role: UserRole
 
 

@@ -27,6 +27,22 @@ def test_acces_sans_jeton(client: TestClient) -> None:
     assert response.status_code == 401
 
 
+def test_auth_me_accepte_un_domaine_local(client: TestClient) -> None:
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "chef@planify.local", "password": "chef-password"},
+    )
+    assert login_response.status_code == 200
+
+    response = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {login_response.json()['access_token']}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["email"] == "chef@planify.local"
+
+
 def test_acces_avec_mauvais_role(client: TestClient) -> None:
     login_response = client.post(
         "/auth/login",
