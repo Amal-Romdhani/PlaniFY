@@ -10,6 +10,7 @@ from app.models.enums import AlertType, RiskLevel
 from app.models.indisponibilite import Indisponibilite
 from app.models.tache import Tache
 from app.services.resource_allocation_service import ResourceAllocationService
+from app.agent.orchestrator import AgentOrchestrator
 
 
 def handle_unavailability_created(unavailability_id: UUID) -> None:
@@ -47,6 +48,8 @@ def handle_unavailability_created(unavailability_id: UUID) -> None:
                         message=f"Conflit d'indisponibilité détecté ({unavailability_id})",
                     )
                 )
+        if conflicts:
+                AgentOrchestrator().run(db, unavailability_id)
         db.commit()
     finally:
         db.close()
