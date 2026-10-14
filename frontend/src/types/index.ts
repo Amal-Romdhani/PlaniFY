@@ -95,3 +95,51 @@ export interface CPMResult {
   date_fin_projet: string
   duree_totale: number
 }
+
+export interface DashboardData {
+  avancement_global: number
+  date_debut: string
+  date_fin_prevue: string
+  jours_restants: number
+  nb_taches: {
+    a_faire: number
+    en_cours: number
+    terminee: number
+  }
+  jalons_a_venir: DashboardMilestone[]
+  jalons_en_retard: DashboardMilestone[]
+  charge_par_ressource: DashboardResourceLoad[]
+  ressources_suralouees: string[]
+  risques: {
+    taches_critiques_en_retard: number
+    conflits_ouverts: number
+    ressources_suralouees: number
+    niveau_global: 'FAIBLE' | 'MOYEN' | 'ELEVE'
+  }
+  alertes_non_resolues: DashboardAlert[]
+  nb_recommandations_en_attente: number
+}
+
+export interface DashboardMilestone {
+  id: string
+  nom: string
+  date: string
+  statut: string
+}
+
+export interface DashboardResourceLoad {
+  resource_id: string
+  nom: string
+  pourcentage_utilisation: number
+  charge_max: number
+  charge_max_journaliere: number
+  est_suralouee: boolean
+}
+
+export interface DashboardAlert {
+  id: string
+  type: string
+  niveau_risque: string
+  message: string
+  date_creation: string
+}

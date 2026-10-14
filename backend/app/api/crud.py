@@ -10,6 +10,7 @@ from app.api.deps import get_current_user, require_roles
 from app.core.database import get_db
 from app.core.security import hash_password
 from app.models.affectation import Affectation
+from app.models.alerte import Alerte
 from app.models.dependance import Dependance
 from app.models.enums import UserRole
 from app.models.indisponibilite import Indisponibilite
@@ -27,6 +28,7 @@ from app.schemas.entities import (
     ResourceRead, ResourceUpdate, TaskCreate, TaskRead, TaskUpdate,
     UnavailabilityCreate, UnavailabilityRead, UnavailabilityUpdate,
 )
+from app.schemas.dashboard import DashboardResponse
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services import crud_service as service
 from app.schemas.resource_allocation import (
@@ -38,6 +40,7 @@ from app.schemas.resource_allocation import (
 from app.services.resource_allocation_service import ResourceAllocationService
 from app.services.reschedule_service import apply_proposal
 from app.services.critical_path_service import CPMResult, get_project_schedule
+from app.services.dashboard_service import get_project_dashboard
 
 
 router = APIRouter()
@@ -111,12 +114,47 @@ def read_critical_path(
     return get_project_schedule(db, project_id)
 
 
+@router.get("/projects/{project_id}/dashboard", response_model=DashboardResponse)
+def read_project_dashboard(
+    project_id: UUID,
+    db: Session = Depends(get_db),
+    user: Utilisateur = Depends(get_current_user),
+) -> DashboardResponse:
+    """Retourne les indicateurs calculés du projet autorisé."""
+
+    service.get_project(db, project_id, user)
+    try:
+        return get_project_dashboard(db, project_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
 @router.patch("/projects/{project_id}", response_model=ProjectRead)
 def update_project(project_id: UUID, data: ProjectUpdate, db: Session = Depends(get_db), user: Utilisateur = Depends(require_roles(UserRole.CHEF_PROJET))) -> Projet:
     project = service.get_project(db, project_id, user)
     result = service.update_project(db, project, data.model_dump(exclude_unset=True))
     save(db)
     return result
+
+
+@router.patch("/alerts/{alert_id}/resolve", response_model=dict[str, str])
+def resolve_alert(
+    alert_id: UUID,
+    db: Session = Depends(get_db),
+    user: Utilisateur = Depends(get_current_user),
+) -> dict[str, str]:
+    """Marque une alerte comme résolue pour son chef ou un administrateur."""
+
+    alert = db.get(Alerte, alert_id)
+    if alert is None:
+        raise service.not_found("Alerte")
+    if user.role != UserRole.ADMIN:
+        if alert.projet_id is None:
+            raise HTTPException(status_code=403, detail="Permissions insuffisantes")
+        service.get_project(db, alert.projet_id, user)
+    alert.resolue = True
+    save(db)
+    return {"status": "resolue"}
 
 
 @router.delete("/projects/{project_id}", status_code=204)
