@@ -1,6 +1,8 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -27,10 +29,28 @@ from app.schemas.entities import (
 )
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services import crud_service as service
+from app.schemas.resource_allocation import (
+    ConflictRead,
+    OverallocationPeriodRead,
+    ResourceAvailabilityRead,
+    ResourceLoadRead,
+)
+from app.services.resource_allocation_service import ResourceAllocationService
 from app.services.critical_path_service import CPMResult, get_project_schedule
 
 
 router = APIRouter()
+
+
+def _period_query(
+    start: date | None,
+    end: date | None,
+) -> tuple[date, date]:
+    period_start = start or date.today()
+    period_end = end or period_start
+    if period_end < period_start:
+        raise HTTPException(status_code=422, detail="La période est invalide")
+    return period_start, period_end
 
 
 def save(db: Session) -> None:
@@ -210,6 +230,78 @@ def list_resources(db: Session = Depends(get_db), user: Utilisateur = Depends(ge
     if user.ressource is None:
         return []
     return [user.ressource]
+
+
+@router.get("/resources/{resource_id}/availability", response_model=ResourceAvailabilityRead)
+def resource_availability(
+    resource_id: UUID,
+    start: date | None = Query(default=None),
+    end: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: Utilisateur = Depends(get_current_user),
+) -> ResourceAvailabilityRead:
+    """Retourne la disponibilité sans motif d'indisponibilité."""
+
+    period_start, period_end = _period_query(start, end)
+    result = ResourceAllocationService(db).get_resource_availability(
+        resource_id, period_start, period_end
+    )
+    return ResourceAvailabilityRead.model_validate({
+        "resource_id": result.resource_id,
+        "days": result.days,
+        "unavailable_periods": [
+            {"date_debut": item.date_debut, "date_fin": item.date_fin}
+            for item in result.unavailable_periods
+        ],
+    })
+
+
+@router.get("/resources/{resource_id}/load", response_model=ResourceLoadRead)
+def resource_load(
+    resource_id: UUID,
+    start: date | None = Query(default=None),
+    end: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: Utilisateur = Depends(get_current_user),
+) -> ResourceLoadRead:
+    """Retourne la charge journalière d'une ressource."""
+
+    period_start, period_end = _period_query(start, end)
+    load = ResourceAllocationService(db).compute_resource_load(
+        resource_id, period_start, period_end
+    )
+    return ResourceLoadRead(resource_id=resource_id, load=load)
+
+
+@router.get("/resources/{resource_id}/conflicts", response_model=list[ConflictRead])
+def resource_conflicts(
+    resource_id: UUID,
+    start: date | None = Query(default=None),
+    end: date | None = Query(default=None),
+    project_id: UUID | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: Utilisateur = Depends(get_current_user),
+) -> list[ConflictRead]:
+    """Retourne les conflits de planification sans motif RGPD."""
+
+    period_start, period_end = _period_query(start, end)
+    conflicts = ResourceAllocationService(db).detect_conflicts(
+        resource_id, period_start, period_end, project_id
+    )
+    return [
+        ConflictRead.model_validate({
+            "tache_id": conflict.tache_id,
+            "nom": conflict.nom,
+            "jours_impactes": conflict.jours_impactes,
+            "est_critique": conflict.est_critique,
+            "marge": conflict.marge,
+            "plage_indisponible": {
+                "date_debut": conflict.plage_indisponible.date_debut,
+                "date_fin": conflict.plage_indisponible.date_fin,
+            },
+        })
+        for conflict in conflicts
+    ]
 
 
 @router.post("/resources", response_model=ResourceRead, status_code=201)

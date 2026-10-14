@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, Date, Enum, ForeignKey, Integer, String
+from sqlalchemy import ARRAY, Boolean, CheckConstraint, Date, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -26,6 +26,7 @@ class Tache(Base):
         ForeignKey("jalons.id", ondelete="SET NULL")
     )
     nom: Mapped[str] = mapped_column(String(255))
+    competences_requises: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     duree: Mapped[int] = mapped_column(Integer)
     date_debut_prevue: Mapped[date] = mapped_column(Date)
     date_fin_prevue: Mapped[date] = mapped_column(Date)

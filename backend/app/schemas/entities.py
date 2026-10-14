@@ -46,6 +46,7 @@ class ProjectRead(ProjectCreate, ReadSchema):
 
 class TaskCreate(BaseModel):
     nom: str = Field(min_length=1, max_length=255)
+    competences_requises: list[str] = Field(default_factory=list)
     duree: int = Field(ge=0)
     date_debut_prevue: date_type
     date_fin_prevue: date_type
@@ -64,6 +65,7 @@ class TaskCreate(BaseModel):
 
 class TaskUpdate(BaseModel):
     nom: str | None = Field(default=None, min_length=1, max_length=255)
+    competences_requises: list[str] | None = None
     duree: int | None = Field(default=None, ge=0)
     date_debut_prevue: date_type | None = None
     date_fin_prevue: date_type | None = None
