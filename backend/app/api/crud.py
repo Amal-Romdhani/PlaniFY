@@ -27,6 +27,7 @@ from app.schemas.entities import (
 )
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services import crud_service as service
+from app.services.critical_path_service import CPMResult, get_project_schedule
 
 
 router = APIRouter()
@@ -58,6 +59,18 @@ def create_project(data: ProjectCreate, db: Session = Depends(get_db), user: Uti
 @router.get("/projects/{project_id}", response_model=ProjectRead)
 def read_project(project_id: UUID, db: Session = Depends(get_db), user: Utilisateur = Depends(get_current_user)) -> Projet:
     return service.get_project(db, project_id, user)
+
+
+@router.get("/projects/{project_id}/critical-path", response_model=CPMResult)
+def read_critical_path(
+    project_id: UUID,
+    db: Session = Depends(get_db),
+    user: Utilisateur = Depends(get_current_user),
+) -> CPMResult:
+    """Retourne le chemin critique d'un projet autorisé."""
+
+    service.get_project(db, project_id, user)
+    return get_project_schedule(db, project_id)
 
 
 @router.patch("/projects/{project_id}", response_model=ProjectRead)
