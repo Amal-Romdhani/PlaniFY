@@ -1,0 +1,18 @@
+[
+  {"text": "La fin est le 2026-03-10.", "results": [{"date_fin": "2026-03-10"}], "valid": true},
+  {"text": "La fin est le 10/03/2026.", "results": [{"date_fin": "2026-03-10"}], "valid": true},
+  {"text": "La fin est le 10 mars 2026.", "results": [{"date_fin": "2026-03-10"}], "valid": true},
+  {"text": "Le retard est de 3 jours.", "results": [{"retard": 3}], "valid": true},
+  {"text": "La marge est de 2 jours.", "results": [{"marge": 2}], "valid": true},
+  {"text": "La tâche est critique depuis 2026-03-10.", "results": [{"date": "2026-03-10"}], "valid": true},
+  {"text": "Aucune valeur chiffrée n'est affichée.", "results": [], "valid": true},
+  {"text": "Les résultats indiquent 0 conflit.", "results": [{"conflits": 0}], "valid": true},
+  {"text": "La fin est le 2026-03-11.", "results": [{"date_fin": "2026-03-10"}], "valid": false},
+  {"text": "Le retard est de 4 jours.", "results": [{"retard": 3}], "valid": false},
+  {"text": "La marge est de 5 jours.", "results": [{"marge": 2}], "valid": false},
+  {"text": "La date est le 11 mars 2026.", "results": [{"date": "2026-03-10"}], "valid": false},
+  {"text": "Le projet dure 7 jours.", "results": [{"duree": 3}], "valid": false},
+  {"text": "La fin est le 2026-04-01.", "results": [{"date_fin": "2026-03-10"}], "valid": false},
+  {"text": "Le retard est de +6 j.", "results": [{"retard": 2}], "valid": false},
+  {"text": "La marge est de 9 jours.", "results": [{"marge": 1}], "valid": false}
+]

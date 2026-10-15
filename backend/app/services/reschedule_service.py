@@ -50,6 +50,8 @@ class SimulationResult:
     nouvelle_ressource_id: UUID | None = None
     reaffectation_possible: bool | None = None
     problemes: list[str] = field(default_factory=list)
+    ancienne_marge: int | None = None
+    nouvelle_marge: int | None = None
 
 
 def _project_data(
@@ -247,6 +249,8 @@ def simulate_delay(
         calendar.working_days_between(baseline.date_fin_projet, project_finish),
         newly_critical,
         conflicts,
+        ancienne_marge=baseline.tasks[task_id].marge,
+        nouvelle_marge=simulated[task_id].marge,
     )
 
 
@@ -308,6 +312,8 @@ def simulate_reassignment(
         new_resource_id,
         not problems,
         problems,
+        ancienne_marge=baseline.tasks[task_id].marge,
+        nouvelle_marge=baseline.tasks[task_id].marge,
     )
 
 
@@ -354,21 +360,46 @@ def apply_proposal(db: Session, action_id: UUID, decideur_id: UUID) -> ActionAge
     if action.statut != AgentActionStatus.EN_ATTENTE:
         raise ValueError("Cette action a déjà été décidée")
     decider = db.get(Utilisateur, decideur_id)
-    if decider is None or decider.role != UserRole.CHEF_PROJET or decider.id != action.projet.chef_id:
-        raise PermissionError("Seul le chef du projet peut valider cette action")
+    if decider is None or (
+        decider.role != UserRole.ADMIN
+        and (decider.role != UserRole.CHEF_PROJET or decider.id != action.projet.chef_id)
+    ):
+        raise PermissionError("Seul le chef du projet ou l'administrateur peut valider cette action")
     task = action.tache
     if task is None:
         raise ValueError("L'action ne référence aucune tâche")
     payload = action.payload or {}
+    params = payload.get("params", payload)
+    simulation = payload.get("simulation_result", {})
+    snapshot = payload.get("planning_snapshot", {})
+    if simulation:
+        expected_task_end = simulation.get("ancienne_date_fin_tache")
+        expected_project_end = simulation.get("ancienne_date_fin_projet")
+        if (
+            expected_task_end is not None
+            and task.date_fin_prevue.isoformat() != str(expected_task_end)
+        ) or (
+            expected_project_end is not None
+            and action.projet.date_fin.isoformat() != str(expected_project_end)
+        ):
+            raise ValueError("planning modifié, relancer la simulation")
+    if snapshot and (
+        task.date_debut_prevue.isoformat() != str(snapshot.get("task_start"))
+        or task.date_fin_prevue.isoformat() != str(snapshot.get("task_end"))
+        or action.projet.date_fin.isoformat() != str(snapshot.get("project_end"))
+    ):
+        raise ValueError("planning modifié, relancer la simulation")
     try:
         if action.type == AgentActionType.REAFFECTATION:
-            new_resource_id = UUID(str(payload["new_resource_id"]))
+            if simulation.get("reaffectation_possible") is False:
+                raise ValueError("La réaffectation simulée n'est plus applicable")
+            new_resource_id = UUID(str(params["new_resource_id"]))
             assignment = db.scalar(select(Affectation).where(Affectation.tache_id == task.id))
             if assignment is None:
                 raise ValueError("La tâche n'est pas affectée")
             assignment.ressource_id = new_resource_id
         elif action.type == AgentActionType.DECALAGE:
-            delay_days = int(payload["delay_days"])
+            delay_days = int(params["delay_days"])
             calendar = WorkCalendar()
             task.date_debut_prevue = calendar.add_working_days(
                 task.date_debut_prevue, delay_days

@@ -3,6 +3,8 @@ export type ProjectStatus = 'PLANIFIE' | 'EN_COURS' | 'TERMINE'
 export type TaskStatus = 'A_FAIRE' | 'EN_COURS' | 'TERMINEE'
 export type ResourceType = 'HUMAINE' | 'MATERIELLE'
 export type ActionStatus = 'EN_ATTENTE' | 'ACCEPTEE' | 'REJETEE'
+export type ActionStrategy = 'DECALAGE' | 'REAFFECTATION' | 'ALERTE'
+export type ValidationStatus = 'VALIDE' | 'REGENERE' | 'REPLI'
 
 export interface Utilisateur {
   id: string
@@ -70,6 +72,36 @@ export interface ActionAgent {
   payload: Record<string, unknown>
   statut: ActionStatus
   date_creation: string
+  date_decision?: string | null
+  decideur_id?: string | null
+  decideur_nom?: string | null
+  simulation_result?: SimulationResult | null
+  validation_status?: ValidationStatus | null
+}
+
+export interface SimulationConflict {
+  tache_id: string
+  nom: string
+  jours_impactes: number
+  est_critique: boolean
+  marge: number
+}
+
+export interface SimulationResult {
+  task_id: string
+  ancienne_date_fin_tache: string
+  nouvelle_date_fin_tache: string
+  ancienne_date_fin_projet: string
+  nouvelle_date_fin_projet: string
+  retard_projet_jours: number
+  ancienne_marge?: number | null
+  nouvelle_marge?: number | null
+  taches_nouvellement_critiques: string[]
+  nouveaux_conflits: SimulationConflict[]
+  ressource_actuelle_id?: string | null
+  nouvelle_ressource_id?: string | null
+  reaffectation_possible?: boolean | null
+  problemes: string[]
 }
 
 export interface Alerte {

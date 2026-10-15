@@ -1,0 +1,1 @@
+"""Routers applicatifs PlaniFY."""

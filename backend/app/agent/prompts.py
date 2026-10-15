@@ -20,3 +20,8 @@ qu'aucun conflit n'existe.
 Ne jamais demander ni mentionner le motif de l'absence.
 Si aucune solution n'existe, dis-le clairement et propose une alerte au chef de
 projet."""
+
+FALLBACK_MESSAGE = (
+    "L'analyse automatique ne peut pas être validée. "
+    "Une validation humaine est requise."
+)

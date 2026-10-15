@@ -1,5 +1,8 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import client from '../api/client'
 import { useAuth } from '../auth/useAuth'
+import type { ActionAgent } from '../types'
 
 const links = [
   { to: '/', label: 'Tableau de bord', roles: ['CHEF_PROJET', 'ADMIN', 'MEMBRE'] },
@@ -11,13 +14,25 @@ const links = [
 
 export default function Layout() {
   const { user, logout } = useAuth()
+  const pendingActions = useQuery({
+    queryKey: ['agent-actions', 'pending', 'navigation'],
+    queryFn: () => client.get<ActionAgent[]>('/agent/actions', { params: { statut: 'EN_ATTENTE' } }).then((response) => response.data),
+    enabled: Boolean(user && ['CHEF_PROJET', 'ADMIN'].includes(user.role)),
+    refetchInterval: 30000,
+    retry: false,
+  })
+  const pendingCount = pendingActions.data?.length ?? 0
   return (
     <div className="flex min-h-screen bg-slate-50">
       <aside className="hidden w-64 shrink-0 bg-slate-950 p-6 text-white md:block">
         <div className="mb-10 flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-cyan-400 font-bold text-slate-950">P</span><span className="text-xl font-semibold">PlaniFY</span></div>
         <nav className="space-y-2">
           {links.filter((link) => user && link.roles.includes(user.role)).map((link) => (
-            <NavLink key={link.to} to={link.to} className={({ isActive }) => `block rounded-lg px-3 py-2.5 text-sm transition ${isActive ? 'bg-cyan-400 font-semibold text-slate-950' : 'text-slate-300 hover:bg-slate-800'}`}>{link.label}</NavLink>
+            <NavLink key={link.to} to={link.to} className={({ isActive }) => `flex items-center justify-between rounded-lg px-3 py-2.5 text-sm transition ${isActive ? 'bg-cyan-400 font-semibold text-slate-950' : 'text-slate-300 hover:bg-slate-800'}`}>
+              {({ isActive }) => <><span>{link.label}</span>
+                {link.to === '/recommendations' && pendingCount > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${isActive ? 'bg-slate-950 text-white' : 'bg-amber-400 text-slate-950'}`}>{pendingCount}</span>}
+              </>}
+            </NavLink>
           ))}
         </nav>
       </aside>

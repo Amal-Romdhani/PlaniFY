@@ -10,8 +10,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agent.prompts import SYSTEM_PROMPT
+from app.agent.prompts import FALLBACK_MESSAGE, SYSTEM_PROMPT
 from app.agent.tools import anthropic_tools, execute_tool
+from app.agent.validator import ValidationResult, validate_explanation
 from app.core.config import settings
 from app.models.action_agent import ActionAgent
 from app.models.affectation import Affectation
@@ -65,6 +66,8 @@ class AgentRunResult:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     tool_results: list[dict[str, Any]] = field(default_factory=list)
     actions_created: list[ActionAgent] = field(default_factory=list)
+    validation_status: str = "VALIDE"
+    unverified_values: list[str] = field(default_factory=list)
 
 
 def _get(value: Any, key: str, default: Any = None) -> Any:
@@ -123,6 +126,64 @@ class AgentOrchestrator:
         self.llm_client = llm_client or AnthropicLLMClient()
         self.max_iterations = max_iterations
 
+    def _validate_final(
+        self,
+        db: Session,
+        messages: list[dict[str, Any]],
+        response: Any,
+        tool_results: list[dict[str, Any]],
+        tool_calls: list[dict[str, Any]],
+        actions: list[ActionAgent],
+        project_id: UUID,
+        task_id: UUID | None,
+    ) -> AgentRunResult:
+        text = _text(response)
+        validation = validate_explanation(text, tool_results)
+        if validation.ok:
+            return AgentRunResult(
+                text, tool_calls, tool_results, actions, "VALIDE", []
+            )
+        rejected = ", ".join(validation.unverified_values)
+        messages.append({
+            "role": "user",
+            "content": (
+                "Ton explication contient des valeurs non vérifiées : "
+                f"{rejected}. Recopie uniquement les valeurs littérales des résultats "
+                "d'outils, sans en inventer d'autres."
+            ),
+        })
+        try:
+            regenerated = self.llm_client.create_message(
+                SYSTEM_PROMPT, messages, anthropic_tools()
+            )
+            regenerated_text = _text(regenerated)
+            second = validate_explanation(regenerated_text, tool_results)
+            if second.ok:
+                return AgentRunResult(
+                    regenerated_text,
+                    tool_calls,
+                    tool_results,
+                    actions,
+                    "REGENERE",
+                    [],
+                )
+        except Exception:
+            logger.exception("Erreur pendant la régénération de l'explication")
+        logger.warning("Explication agent rejetée: %s", rejected)
+        actions.append(
+            _create_alert_action(
+                db, project_id, task_id, FALLBACK_MESSAGE
+            )
+        )
+        return AgentRunResult(
+            FALLBACK_MESSAGE,
+            tool_calls,
+            tool_results,
+            actions,
+            "REPLI",
+            validation.unverified_values,
+        )
+
     def _initial_context(
         self, db: Session, unavailability_id: UUID
     ) -> tuple[dict[str, Any], UUID, UUID | None]:
@@ -177,10 +238,16 @@ class AgentOrchestrator:
                     {"role": "assistant", "content": [_block_json(block) for block in blocks]}
                 )
                 if _get(response, "stop_reason") == "end_turn":
-                    return AgentRunResult(_text(response), tool_calls, tool_results, actions)
+                    return self._validate_final(
+                        db, messages, response, tool_results, tool_calls,
+                        actions, project_id, task_id
+                    )
                 uses = [block for block in blocks if _get(block, "type") == "tool_use"]
                 if not uses:
-                    return AgentRunResult(_text(response), tool_calls, tool_results, actions)
+                    return self._validate_final(
+                        db, messages, response, tool_results, tool_calls,
+                        actions, project_id, task_id
+                    )
                 results = []
                 for block in uses:
                     name = _get(block, "name")
@@ -200,11 +267,13 @@ class AgentOrchestrator:
                         "content": json.dumps(result, ensure_ascii=False),
                     })
                 messages.append({"role": "user", "content": results})
-            message = "L'analyse automatique a atteint sa limite; validation humaine requise."
-            actions.append(_create_alert_action(db, project_id, task_id, message))
-            return AgentRunResult(message, tool_calls, tool_results, actions)
+            actions.append(_create_alert_action(db, project_id, task_id, FALLBACK_MESSAGE))
+            return AgentRunResult(
+                FALLBACK_MESSAGE, tool_calls, tool_results, actions, "REPLI", []
+            )
         except Exception:
             logger.exception("Erreur pendant l'exécution de l'agent")
-            message = "L'analyse automatique est indisponible; validation humaine requise."
-            actions.append(_create_alert_action(db, project_id, task_id, message))
-            return AgentRunResult(message, tool_calls, tool_results, actions)
+            actions.append(_create_alert_action(db, project_id, task_id, FALLBACK_MESSAGE))
+            return AgentRunResult(
+                FALLBACK_MESSAGE, tool_calls, tool_results, actions, "REPLI", []
+            )

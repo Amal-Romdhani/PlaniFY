@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
 from app.api.crud import router as crud_router
+from app.routers.agent_router import router as agent_router
+from app.routers.monitoring_router import router as monitoring_router
+from app.monitoring.job import create_scheduler
 from app.core.config import settings
 
 
@@ -22,6 +25,11 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(crud_router)
+app.include_router(agent_router)
+app.include_router(monitoring_router)
+
+monitoring_scheduler = create_scheduler()
+monitoring_scheduler.start()
 
 
 @app.get("/health")

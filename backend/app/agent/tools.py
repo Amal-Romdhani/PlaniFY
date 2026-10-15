@@ -176,6 +176,11 @@ def _notify(db: Session, args: NotifyStakeholderInput) -> dict[str, Any]:
     payload = {
         "params": args.params,
         "simulation_result": simulation,
+        "planning_snapshot": {
+            "task_start": task.date_debut_prevue,
+            "task_end": task.date_fin_prevue,
+            "project_end": task.projet.date_fin,
+        },
     }
     action = ActionAgent(
         projet_id=args.project_id,
